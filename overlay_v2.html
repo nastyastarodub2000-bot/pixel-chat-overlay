@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Pixel Chat Overlay для Streamelements</title>
+  <link rel="stylesheet" href="fonts.css">
+  <style>/* overlay v2 decorative frame patch */
+    :root {
+      --bg: #1a0a2a;
+      --bg2: #2a0a3a;
+      --text: #e9f2ff;
+      --accent: #8e2de2;
+      --badge-mod: rgba(60,120,200,0.95);
+      --badge-vip: rgba(200,0,0,0.95);
+      --badge-streamer: rgba(255,210,0,0.95);
+      /* visuals for streamer highlight */
+      --highlight: rgba(255,235,170,0.25);
+    }
+    html, body { height: 100%; margin:0; background: linear-gradient(135deg, var(--bg), var(--bg2)); color: var(--text); font-family: var(--font-pixel, monospace); }
+
+    /* Layout and scene */
+    .layout { display: grid; width: 100%; height: calc(100% - 40px); grid-template-columns: 1fr; grid-template-rows: auto 1fr; grid-gap: 0; position: relative; }
+    .layout.mode-b { grid-template-columns: 60% 40%; grid-template-rows: auto 1fr; }
+    .layout.mode-c { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+
+    .scene { position: relative; width: 100%; height: 60vh; overflow: hidden; }
+    /* Leaves (3, slower) */
+    .leaf { position: absolute; width: 28px; height: 28px; background: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2728%22 height=%2728%22><rect width=%2728%25%22 height=%2728%25%22 fill=%22%2366d17a%22/></svg>') no-repeat center/cover; opacity:.95; }
+    @keyframes flutter { 0% { transform: translate(0,0) rotate(0deg); opacity:0.95; } 50% { transform: translate(6px,-10px) rotate(4deg); } 100% { transform: translate(-2px,-28px) rotate(-4deg); opacity:0.8; } }
+    .leaf.l1{ left: 6%; top: 8%; animation: flutter 14s ease-in-out infinite; }
+    .leaf.l2{ left: 22%; top: 14%; animation: flutter 18s ease-in-out infinite; animation-delay: 2s; }
+    .leaf.l3{ left: 68%; top: 6%; width: 24px; height: 24px; animation: flutter 16s ease-in-out infinite; animation-delay: 4s; }
+
+    /* Parrots (3) roaming on chat */
+    .parrot { position: absolute; width: 60px; height: 40px; fill: #ffce00; z-index: 2; pointer-events: none; }
+    .parrot svg{ width:100%; height:100%; }
+    @keyframes fly { 0% { transform: translateX(-20px) translateY(0); } 50% { transform: translateX(40vw) translateY(-6px); } 100% { transform: translateX(110vw) translateY(2px); } }
+    .parrot.p1{ top: 15%; left: -80px; animation: fly 24s linear infinite; }
+    .parrot.p2{ top: 28%; left: -100px; animation: fly 28s linear infinite; animation-delay: 4s; }
+    .parrot.p3{ top: 20%; left: -120px; animation: fly 26s linear infinite; animation-delay: 6s; }
+
+    /* Chat area */
+    .chat { grid-column: 1; grid-row: 2; height: 40vh; overflow: auto; border-radius: 12px; background: rgba(20,0,40,.92); border: 2px solid #fff; padding: 12px; }
+
+    /* Badges and roles */
+    .badge { display:inline-block; padding:2px 6px; border-radius:999px; font-size:11px; font-weight:700; margin-left:6px; color:#fff; }
+    .badge.MOD { background: var(--badge-mod); }
+    .badge.VIP { background: var(--badge-vip); }
+    .badge.STREAMER { background: var(--badge-streamer); }
+    .highlight-streamer { background: var(--highlight); border-left: 3px solid rgba(255,210,0,0.9); padding-left:6px; }
+    .msg { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.08); font-family: var(--font-pixel, monospace); font-size: 14px; }
+    .msg .author { color: #7bd7ff; font-weight: 700; margin-right: 6px; }
+    .msg .text { white-space: pre-wrap; }
+
+    /* Controls */
+    .mode-toggle { position: absolute; top: 6px; right: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid #fff; background: rgba(0,0,0,.4); color: #fff; cursor: pointer; }
+    #badgeToggle { position: absolute; top: 6px; right: 140px; padding: 6px 10px; border-radius: 6px; border: 1px solid #fff; background: rgba(0,0,0,.4); color:#fff; cursor: pointer; }
+
+    /* Settings panel */
+    #settingsPanel { position: absolute; top: 40px; right: 6px; width: 290px; max-height: 70vh; overflow: auto; background: rgba(0,0,0,.5); border: 1px solid #fff; border-radius: 8px; padding: 12px; display: none; z-index: 50; }
+    #settingsPanel h4 { margin: 6px 0 6px; font-size: 12px; opacity:.9; }
+    .setting-row { display:flex; align-items:center; justify-content: space-between; margin: 6px 0; font-size: 12px; }
+    .setting-row label { flex: 1; }
+    .setting-row input[type="color"] { width: 40px; height: 28px; border: none; padding: 0; }
+    .setting-row input[type="checkbox"] { transform: scale(1.1); margin-left: 8px; }
+
+    .hidden { display:none; }
+
+    @media (max-width: 900px) {
+      .layout { height: auto; }
+      .scene { height: auto; }
+      .chat { height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <button class="mode-toggle" id="modeToggle" title="Переключатель макета">Mode A</button>
+  <button id="badgeToggle" title="Переключить вид бейджей">Badges: On</button>
+  <button id="settingsBtn" title="Настройки внешнего вида">Settings</button>
+
+  <div class="layout mode-a" id="layoutRoot" role="region" aria-label="Overlay layout">
+    <div class="scene" id="sceneWrapper" aria-label="Pixel scene overlay">
+      <div class="leaf l1" aria-label="leaf"></div>
+      <div class="leaf l2" aria-label="leaf"></div>
+      <div class="leaf l3" aria-label="leaf"></div>
+
+      <div class="parrot p1" aria-label="parrot 1">
+        <svg viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg"><rect width="60" height="40" rx="6" fill="#4cc4ff"/><polygon points="8,25 20,25 12,15" fill="#0a0a0a"/><polygon points="15,14 26,10 28,18 18,20" fill="#f90"/><polygon points="34,14 48,18 38,26 34,20" fill="#fff"/></svg>
+      </div>
+      <div class="parrot p2" aria-label="parrot 2">
+        <svg viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg"><rect width="60" height="40" rx="6" fill="#e6a8ff"/><circle cx="20" cy="18" r="4" fill="#000"/><polygon points="25,12 38,14 34,20" fill="#ff0"/><polygon points="12,26 28,26 18,31" fill="#fff"/></svg>
+      </div>
+      <div class="parrot p3" aria-label="parrot 3">
+        <svg viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg"><rect width="60" height="40" rx="6" fill="#a8ff6a"/><circle cx="22" cy="18" r="4" fill="#000"/><polygon points="28,12 42,14 38,22" fill="#0ff"/><polygon points="14,26 28,26 20,32" fill="#fff"/></svg>
+      </div>
+    </div>
+
+    <div class="chat" id="messages" aria-label="Сообщения">
+      <!-- Сообщения будут загружаться из CSV -->
+      <div id="birdLayer" style="position:absolute; inset:0; pointer-events:none;"></div>
+    </div>
+  </div>
+
+  <div class="inputbar" style="padding:0 6%;" aria-label="Панель ввода">
+    <input id="csvUrlInput" type="text" placeholder="URL к CSV" style="flex:1;" />
+    <button id="loadUrl" >Load URL</button>
+  </div>
+  <div class="inputbar" style="padding:6px 6%;" aria-label="Панель загрузки">
+    <input id="csvFile" type="file" accept="text/csv"/>
+    <button id="loadFile">Load File</button>
+    <input id="rolesUrl" placeholder="URL к ролям (JSON)" style="margin-left:12px;"/>
+    <button id="loadRoles">Load Roles</button>
+  </div>
+
+  <div id="settingsPanel" aria-label="Настройки" >
+    <h4>Настройки цвета бейджей</h4>
+    <div class="setting-row">
+      <label>MOD badge color</label>
+      <input id="colorMod" type="color" value="#3c78c8" />
+    </div>
+    <div class="setting-row">
+      <label>VIP badge color</label>
+      <input id="colorVip" type="color" value="#c80000" />
+    </div>
+    <div class="setting-row">
+      <label>STREAMER badge color</label>
+      <input id="colorStreamer" type="color" value="#ffd400" />
+    </div>
+    <h4>Настройки вида</h4>
+    <div class="setting-row">
+      <label>Показывать бейджи</label>
+      <input id="toggleBadges" type="checkbox" checked />
+    </div>
+    <div class="setting-row">
+      <label>Птицы (видимость)</label>
+      <input id="toggleBirds" type="checkbox" checked />
+    </div>
+    <div class="setting-row">
+      <label>Листья (видимость)</label>
+      <input id="toggleLeaves" type="checkbox" checked />
+    </div>
+    <div class="setting-row">
+      <label>Скорость птиц (множитель)</label>
+      <input id="birdSpeed" type="range" min="0.5" max="2.5" step="0.1" value="1" />
+    </div>
+    <div class="setting-row">
+      <label>Тон фона чата</label>
+      <input id="chatShade" type="color" value="#1a0a2a" />
+    </div>
+  </div>
+
+  <button id="settingsBtn" title="Настройки внешнего вида" style="position: absolute; top: 6px; right: 6px;">Settings</button>
+  <button id="badgeToggle" title="Переключить вид бейджей" style="position: absolute; top: 6px; right: 140px;">Badges: On</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <script>
+    // State
+    let badgesVisible = true;
+    let birds = [];
+    let birdsReady = false;
+    let lastRows = [];
+
+    function renderMessages(rows){ const container = document.getElementById('messages'); container.innerHTML = ''; if(!rows) return; lastRows = rows; rows.forEach(r => {
+      if(!r.message) return; const div = document.createElement('div'); div.className = 'msg';
+      // streamer highlight
+      if(r.role && String(r.role).toUpperCase() === 'STREAMER') div.classList.add('highlight-streamer');
+      const author = document.createElement('span'); author.className = 'author'; author.textContent = (r.author || 'anon') + ':';
+      div.appendChild(author);
+      // badge if enabled
+      if (badgesVisible && r.role){
+        const badge = document.createElement('span'); badge.className = 'badge ' + (r.role ? r.role.toUpperCase() : '');
+        const icon = document.createElement('span'); icon.style.marginRight = '4px';
+        const roleU = (r.role || '').toUpperCase();
+        if (roleU === 'MOD') icon.textContent = '🛡';
+        else if (roleU === 'VIP') icon.textContent = '💎';
+        else if (roleU === 'STREAMER') icon.textContent = '⚡';
+        else icon.textContent = '🏷';
+        badge.appendChild(icon);
+        badge.appendChild(document.createTextNode(' ' + (r.role || '')));
+        div.appendChild(badge);
+      }
+      const text = document.createElement('span'); text.className = 'text'; text.textContent = ' ' + (r.message || ''); div.appendChild(text);
+      container.appendChild(div);
+    }); container.scrollTop = container.scrollHeight; }
+
+    async function parseCSVFromText(text){ const data = Papa.parse(text, { header: true, skipEmptyLines: true }).data; renderMessages(data); }
+
+    async function loadFromURL(url){ try { const res = await fetch(url); const text = await res.text(); parseCSVFromText(text); } catch(e){ console.error(e); } }
+
+    document.getElementById('loadUrl').addEventListener('click', ()=>{ const url = document.getElementById('csvUrlInput').value; if(url) loadFromURL(url); });
+    document.getElementById('loadFile').addEventListener('click', ()=>{ const f = document.getElementById('csvFile').files[0]; if(!f) return; const reader = new FileReader(); reader.onload = (ev)=>{ parseCSVFromText(ev.target.result); }; reader.readAsText(f); });
+
+    // Badges toggle
+    const badgeToggle = document.getElementById('badgeToggle');
+    function applyBadgesState(){ badgeToggle.textContent = 'Badges: ' + (badgesVisible ? 'On' : 'Off'); localStorage.setItem('overlayBadges', badgesVisible); if (lastRows.length) renderMessages(lastRows); }
+    const storedBadges = localStorage.getItem('overlayBadges'); if (storedBadges !== null) badgesVisible = storedBadges === 'true'; applyBadgesState(); badgeToggle.addEventListener('click', ()=>{ badgesVisible = !badgesVisible; applyBadgesState(); });
+
+    // Role map loader (optional JSON)
+    async function loadRolesFromURL(url){ try { const res = await fetch(url); const json = await res.json(); // not strictly used now, but can be extended
+        console.info('Roles loaded', json); } catch(e){ console.error(e); } }
+    document.getElementById('loadRoles').addEventListener('click', ()=>{ const url = document.getElementById('rolesUrl').value; if(url) loadRolesFromURL(url); });
+
+    // Roaming birds
+    function addBirds(count){ const layer = document.getElementById('birdLayer'); if(!layer) return; const chat = document.getElementById('messages'); for(let i=0;i<count;i++){ const bird = document.createElement('div'); bird.className = 'bird'; bird.style.position = 'absolute'; const maxX = Math.max(0, chat.clientWidth - 26); const maxY = Math.max(0, chat.clientHeight - 20); bird.style.left = Math.random() * maxX + 'px'; bird.style.top = Math.random() * maxY * 0.6 + 'px'; bird.innerHTML = `
+        <svg width="26" height="20" viewBox="0 0 26 20" xmlns="http://www.w3.org/2000/svg">
+          <rect width="26" height="20" rx="4" fill="#4cc4ff"/>
+          <polygon class="beak" points="7,9 11,7 11,11" fill="#000"/>
+          <circle cx="5" cy="6" r="1.6" fill="#fff"/>
+        </svg>`; bird.style.pointerEvents = 'none'; layer.appendChild(bird); const b = { el: bird, x: parseFloat(bird.style.left), y: parseFloat(bird.style.top), w: 26, h: 20, vx: (Math.random()<0.5? -1:1)*0.4, vy: (Math.random()<0.5? -1:1)*0.25, peckCooldown: Math.random()*3000 + 2000, pecking:false }; birds.push(b); }
+      birdsReady = true; roamLoop(); }
+
+    function triggerPeck(b){ const svg = b.el.querySelector('svg'); if(!svg) return; const beak = svg.querySelector('.beak'); if(!beak) return; beak.style.transform = 'rotate(-12deg)'; setTimeout(()=>{ beak.style.transform = 'none'; }, 260); }
+
+    function roamLoop(){ if(!birdsReady) return; const chatEl = document.getElementById('messages'); const boundsW = chatEl.clientWidth - 26; const boundsH = chatEl.clientHeight - 20; birds.forEach((b)=>{ b.x += b.vx; b.y += b.vy; if(b.x < 0){ b.x = 0; b.vx *= -1; } if(b.x > boundsW){ b.x = boundsW; b.vx *= -1; } if(b.y < 0){ b.y = 0; b.vy *= -1; } if(b.y > boundsH){ b.y = boundsH; b.vy *= -1; } b.el.style.left = b.x + 'px'; b.el.style.top = b.y + 'px'; b.peckCooldown -= 16; if(b.peckCooldown <= 0 && !b.pecking){ triggerPeck(b); b.peckCooldown = 2000 + Math.random()*4000; } }); requestAnimationFrame(() => roamLoop()); }
+
+    function startRoaming(){ if(birdsReady){ roamLoop(); } }
+
+    document.addEventListener('DOMContentLoaded', ()=>{ addBirds(3); // 3 birds
+      // gather existing birds into array if any exist
+      const arr = Array.from(document.querySelectorAll('.bird'));
+      if(arr.length){ birds = arr.map(el => ({ el: el, x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: 26, h: 20, vx: (Math.random()<0.5? -1:1)*0.4, vy: (Math.random()<0.5? -1:1)*0.25, peckCooldown: Math.random()*3000 + 2000, pecking:false })); }
+      startRoaming();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+/* Minimal pixel-friendly font fallback. You can replace with any webfont later. */
+@font-face {
+  font-family: 'PixelFont';
+  src: local('Courier New'), local('Monaco'), local('Consolas'), local('Monospace');
+  font-weight: 400;
+  font-style: normal;
+}
+html, body { font-family: 'PixelFont', monospace; }

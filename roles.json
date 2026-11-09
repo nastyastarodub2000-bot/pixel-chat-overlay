@@ -1,0 +1,5 @@
+{
+  "MOD": {"label":"MOD","name":"Moderator","icon":"mod.svg"},
+  "VIP": {"label":"VIP","name":"VIP","icon":"vip.svg"},
+  "STREAMER": {"label":"STREAMER","name":"Streamer","icon":"streamer.svg"}
+}
